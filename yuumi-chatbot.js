@@ -199,133 +199,148 @@
         const chatHeaderEl = chatWidgetEl.querySelector('.yuumi-chat-header');
         const toggleIconEl = document.getElementById('yuumi-chat-toggle-icon');
 
+        // Lấy userId từ localStorage hoặc tạo mới
+        let userId = localStorage.getItem('yuumiChatUserId');
+        if (!userId) {
+            userId = 'yuumi_user_' + Math.random().toString(36).substr(2, 9) + Date.now();
+            localStorage.setItem('yuumiChatUserId', userId);
+        }
+        console.log("Yuumi Chatbot Initialized with UserID:", userId); // Để debug
+
+        let isChatWidgetFullyOpen = false; // Trạng thái widget có đang mở rộng hoàn toàn hay không
+
         function toggleFullChatWindow() {
             isChatWidgetFullyOpen = !isChatWidgetFullyOpen;
             if (isChatWidgetFullyOpen) {
                 chatWidgetEl.classList.add('yuumi-fully-open');
                 chatBodyEl.style.display = 'flex';
                 chatWidgetEl.querySelector('.yuumi-chat-footer').style.display = 'flex';
-                toggleIconEl.innerHTML = '✕'; // Dấu X (hoặc dùng SVG)
-                chatInputEl.focus(); // Focus vào input khi mở
+                toggleIconEl.innerHTML = '✕'; // Dấu X
+                openChatButtonFloatEl.style.opacity = '0';
+                openChatButtonFloatEl.style.visibility = 'hidden';
+                chatInputEl.focus();
             } else {
                 chatWidgetEl.classList.remove('yuumi-fully-open');
-                // CSS transition sẽ tự động xử lý height và transform
-                // Đợi transition xong mới ẩn body và footer để đẹp hơn
                 setTimeout(() => {
-                    if (!isChatWidgetFullyOpen) { // Kiểm tra lại trạng thái vì user có thể click nhanh
+                    if (!isChatWidgetFullyOpen) {
                         chatBodyEl.style.display = 'none';
                         chatWidgetEl.querySelector('.yuumi-chat-footer').style.display = 'none';
                     }
-                }, 300); // 300ms khớp với transition time
+                }, 300);
                 toggleIconEl.textContent = '+';
+                openChatButtonFloatEl.style.opacity = '1';
+                openChatButtonFloatEl.style.visibility = 'visible';
             }
         }
 
         openChatButtonFloatEl.addEventListener('click', toggleFullChatWindow);
         chatHeaderEl.addEventListener('click', toggleFullChatWindow);
 
-
         function addMessageToChat(text, senderClass) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('yuumi-message', senderClass);
             const p = document.createElement('p');
-            p.innerHTML = text.replace(/\n/g, '<br>'); // Thay \n bằng <br> để hiển thị xuống dòng
+            p.innerHTML = text.replace(/\n/g, '<br>');
             messageDiv.appendChild(p);
             chatBodyEl.appendChild(messageDiv);
-            chatBodyEl.scrollTop = chatBodyEl.scrollHeight;
+            // Cuộn xuống tin nhắn mới nhất một cách mượt mà hơn
+            chatBodyEl.scrollTo({
+                top: chatBodyEl.scrollHeight,
+                behavior: 'smooth'
+            });
         }
 
-        async function sendMessage() {
-            const messageText = chatInputEl.value.trim();
-            if (!messageText) return;
+        async function sendMessage(messageTextForApi) {
+            const messageToSend = typeof messageTextForApi === 'string' ? messageTextForApi : chatInputEl.value.trim();
 
-            addMessageToChat(messageText, 'yuumi-user');
-            chatInputEl.value = '';
+            // Chỉ thêm vào UI và xóa input nếu là tin nhắn từ người dùng thực sự gõ
+            if (typeof messageTextForApi !== 'string') {
+                if (!messageToSend) return; // Không gửi nếu input rỗng
+                addMessageToChat(messageToSend, 'yuumi-user');
+                chatInputEl.value = ''; // Xóa input sau khi người dùng gửi
+            }
+
             chatInputEl.disabled = true;
             sendButtonEl.disabled = true;
             sendButtonEl.style.cursor = 'default';
 
+            // Tùy chọn: Thêm "Bot is typing..." indicator
+            // const typingIndicatorId = 'typing-' + Date.now();
+            // addMessageToChat('Yuumi đang soạn tin...', 'yuumi-bot yuumi-typing-indicator');
+            // const typingIndicator = chatBodyEl.querySelector('.yuumi-typing-indicator');
+
 
             try {
-                // Hiển thị typing indicator (tùy chọn)
-                // addMessageToChat("Bot đang gõ...", "yuumi-bot yuumi-typing");
-
-                const response = await fetch(CHAT_API_URL, {
+                const response = await fetch(CHAT_API_URL, { // Đảm bảo CHAT_API_URL đã được định nghĩa ở đầu file
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, message: messageText }),
+                    body: JSON.stringify({ user_id: userId, message: messageToSend }),
                 });
 
-                // Xóa typing indicator (nếu có)
-                // const typingIndicator = chatBodyEl.querySelector(".yuumi-typing");
-                // if (typingIndicator) typingIndicator.remove();
+                // if (typingIndicator) typingIndicator.remove(); // Xóa typing indicator
 
                 if (!response.ok) {
-                    const errorText = await response.text(); // Lấy text lỗi từ server nếu có
-                    throw new Error(`API error: ${response.status} - ${errorText || response.statusText}`);
+                    const errorText = await response.text().catch(() => 'Không thể đọc phản hồi lỗi từ server.');
+                    console.error(`API Error ${response.status}: ${errorText}`);
+                    addMessageToChat(`Xin lỗi, có lỗi từ server (mã ${response.status}). Vui lòng thử lại sau.`, 'yuumi-bot');
+                    return; // Dừng lại nếu API lỗi
                 }
 
                 const data = await response.json();
-                addMessageToChat(data.bot_response, 'yuumi-bot');
+                if (data.bot_response) {
+                    addMessageToChat(data.bot_response, 'yuumi-bot');
+                } else {
+                    console.warn("Received empty bot_response from API:", data);
+                    addMessageToChat("Có vẻ Yuumi không có gì để nói thêm lúc này.", "yuumi-bot");
+                }
 
             } catch (error) {
-                console.error('Yuumi Chatbot Error:', error);
-                addMessageToChat('Xin lỗi, đã có lỗi xảy ra khi kết nối tới chatbot. Vui lòng thử lại sau.', 'yuumi-bot');
+                // if (typingIndicator) typingIndicator.remove(); // Đảm bảo xóa nếu có lỗi fetch
+                console.error('Yuumi Chatbot Fetch Error:', error);
+                addMessageToChat('Xin lỗi, đã có lỗi xảy ra khi kết nối tới chatbot. Vui lòng kiểm tra lại kết nối mạng và thử lại sau.', 'yuumi-bot');
             } finally {
                 chatInputEl.disabled = false;
                 sendButtonEl.disabled = false;
                 sendButtonEl.style.cursor = 'pointer';
-                if (isChatWidgetFullyOpen) { // Chỉ focus nếu cửa sổ đang mở
+                // Chỉ focus nếu widget đang mở và đó là tin nhắn người dùng (không phải tin nhắn khởi tạo)
+                if (isChatWidgetFullyOpen && typeof messageTextForApi !== 'string') {
                     chatInputEl.focus();
                 }
             }
         }
 
-        sendButtonEl.addEventListener('click', sendMessage);
+        sendButtonEl.addEventListener('click', () => sendMessage());
         chatInputEl.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter' && !e.shiftKey) { // Gửi khi Enter, cho phép Shift+Enter để xuống dòng
-                e.preventDefault(); // Ngăn hành vi mặc định của Enter (vd: submit form)
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
                 sendMessage();
             }
         });
 
-        // Gửi tin nhắn chào mừng ban đầu hoặc gọi API để lấy tin nhắn chào
-        // Ví dụ: gọi API để lấy tin nhắn chào động
-        async function getInitialGreeting() {
-            try {
-                // Giả sử API sẽ trả về tin nhắn chào khi không có message hoặc user_id đặc biệt
-                const response = await fetch(CHAT_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, message: "__initial_greeting__" }), // Một message đặc biệt
-                });
-                 if (!response.ok) throw new Error('Failed to get initial greeting');
-                const data = await response.json();
-                addMessageToChat(data.bot_response, 'yuumi-bot');
-            } catch (error) {
-                console.error("Error getting initial greeting:", error);
-                addMessageToChat("Chào bạn! Tôi là Yuumi. Hãy cho tôi biết các triệu chứng của bạn.", "yuumi-bot"); // Tin nhắn mặc định
-            }
+        // --- TỰ ĐỘNG GỬI REQUEST KHỞI TẠO ĐỂ NHẬN LỜI CHÀO TỪ BACKEND ---
+        function sendInitialGreetingRequest() {
+            console.log("Yuumi Chatbot: Sending initial greeting request for user:", userId);
+            // Gửi một message đặc biệt mà backend sẽ nhận diện để trả về lời chào
+            sendMessage("__INITIAL_GREETING_FROM_CLIENT__");
         }
-        // Gọi hàm lấy tin nhắn chào khi chat được khởi tạo
-        // getInitialGreeting(); // Bỏ comment dòng này nếu muốn gọi API cho tin nhắn chào
-        // Hoặc đơn giản là hiển thị tin nhắn chào cứng
-        addMessageToChat("Xin chào, mình là Yuumi – Trợ lý sức khỏe thông minh. Mình có thể hỗ trợ gì cho bạn hôm nay?", "yuumi-bot");
 
+        // Gọi hàm gửi request khởi tạo sau một khoảng trễ nhỏ để DOM kịp render
+        // và có thể widget đã bắt đầu hiển thị (nếu không ẩn hoàn toàn ban đầu)
+        // Điều này cũng giúp tránh việc gọi API quá sớm nếu có các script khác đang chạy.
+        setTimeout(sendInitialGreetingRequest, 500); // Có thể điều chỉnh thời gian trễ này
 
-    }
+    } // Kết thúc initializeChatLogic
 
-    // --- Phần 4: Chạy tất cả khi DOM đã sẵn sàng ---
-    function main() {
-        createChatWidgetHTML();
-        injectCSS();
-        initializeChatLogic();
-    }
+// --- Phần 4: Chạy tất cả khi DOM đã sẵn sàng --- (Giữ nguyên)
+function main() {
+createChatWidgetHTML();
+injectCSS();
+initializeChatLogic();
+}
+if (document.readyState === 'loading') {
+document.addEventListener('DOMContentLoaded', main);
+} else {
+main();
+}
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', main);
-    } else {
-        main();
-    }
-
-})();
+})(); // Kết thúc IIFE
