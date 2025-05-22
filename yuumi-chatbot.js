@@ -310,7 +310,7 @@
         // Gọi hàm lấy tin nhắn chào khi chat được khởi tạo
         // getInitialGreeting(); // Bỏ comment dòng này nếu muốn gọi API cho tin nhắn chào
         // Hoặc đơn giản là hiển thị tin nhắn chào cứng
-        // addMessageToChat("Xin chào! Tôi là Yuumi, chatbot sức khỏe của bạn.\nHãy cho tôi biết bạn cần gì hôm nay bằng cách chọn hoặc gõ vào nhé!", "yuumi-bot");
+        addMessageToChat("Xin chào, mình là Yuumi – Trợ lý sức khỏe thông minh. Mình có thể hỗ trợ gì cho bạn hôm nay?", "yuumi-bot");
 
 
     }
